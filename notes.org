@@ -1,0 +1,52 @@
+* poglebianie fcn
+
+  + dec=2, k=1cm, epochs=500, batch norm std, batch_size=64
+
+| state |      layers | train_mae | mae | epochs |
+|-------+-------------+-----------+-----+--------|
+| D     |    100-50-1 |      .095 | .16 |    500 |
+| D     |        50-1 |       .13 | .14 |    500 |
+| R     | 100-50-25-1 |           |     |        |
+
+
+* poszerzanie fcn
+
++ dec=2, k=1cm, epochs=500, batch norm std
+
+| state |    layers | train_mae | mae | epochs |
+|-------+-----------+-----------+-----+--------|
+| D     |  100-50-1 |      .095 | .16 |    500 |
+| R     | 200-100-1 |           |     |        |
+| D     |   50-25-1 |       .12 | .13 |    500 |
+
+
+* wersja splotowa
+  - dec=2, k=1cm, epochs=500
+
+| state | layers                                 | train_mae | mae | epochs |
+|-------+----------------------------------------+-----------+-----+--------|
+| R     | conv(32, 51, 10)-conv(64, 6, 5) -fc(1) |           |     |    500 |
+|       | conv(16, 51, 10)-conv(32, 6, 5) -fc(1) |           |     |    500 |
+
+
+* rozmiar okna
+
+* decymacja
+
+  - FCN 100-50-1
+  - batch size = 64
+
+| dec | train_mae | mae | epochs | state |
+|-----+-----------+-----+--------+-------|
+|   1 |      .095 | .16 |    500 | D     |
+|   2 |        .1 | .16 |    500 | D     |
+
+* rozmiar batcha
+
+
+
+* rozmiar lr
+
+
+* wersja rekurencyjna
+
