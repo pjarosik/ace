@@ -10,5 +10,5 @@ if [ "${eval_name}" != '.' ] ; then
     echo "Copying template to '${eval_name}'..."
     mkdir -p "evals/${eval_name}/result"
     # here put files, which are required for one evaluation
-    cp {train.py,data.ipynb,test_results.ipynb} "evals/${eval_name}/"
+    cp {train.py,data.ipynb,test_results.ipynb,imasonic_test.ipynb} "evals/${eval_name}/"
 fi

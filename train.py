@@ -20,6 +20,9 @@ from collections import namedtuple
 import utils.sklearn
 import utils.keras
 import experimental.rf_vs_bmode.pmaps.piston.h5_data_provider as data_provider
+from keras.optimizers import Adam
+
+import utils.validation
 
 
 def init_seeds():
@@ -31,10 +34,19 @@ no_test_splits = 1
 test_size = .3
 split_seed = 24
 
-EPOCHS = 500
+EPOCHS = 300
+BATCH_SIZE = 32
+
+dropout_rate = 0.5
+
+def compute_std(y_true, y_pred):
+    y_pred = y_pred.flatten()
+    return np.std(np.abs(y_pred-y_true))
+
 
 test_metrics = [
-    ('mean_absolute_error', sklearn.metrics.mean_absolute_error, 'regression')
+    ('mean_absolute_error', sklearn.metrics.mean_absolute_error, 'regression'),
+    ('std', compute_std, 'regression')
 ]
 
 PointEvalResults = namedtuple("PointEvalResults", [
@@ -53,13 +65,15 @@ def create_fcn_layers(input_shape, units, hidden_activation, output_activation):
         layers.extend([
             first_layer,
             keras.layers.BatchNormalization(),
-            keras.layers.Activation(hidden_activation)
+            keras.layers.Activation(hidden_activation),
+            keras.layers.Dropout(dropout_rate)
         ])
         for unit in units[1:-1]:
             layers.extend([
                 keras.layers.Dense(unit, activation=None),
                 keras.layers.BatchNormalization(),
-                keras.layers.Activation(hidden_activation)
+                keras.layers.Activation(hidden_activation),
+                keras.layers.Dropout(dropout_rate)
             ])
         layers.append(
             keras.layers.Dense(units[-1], activation=output_activation)
@@ -67,11 +81,11 @@ def create_fcn_layers(input_shape, units, hidden_activation, output_activation):
     else:
         if input_shape is not None:
             layers.append(
-                keras.layers.Dense(units[-1], activation=None, input_shape=input_shape)
+                keras.layers.Dense(units[-1], activation=output_activation, input_shape=input_shape)
             )
         else:
             layers.append(
-                keras.layers.Dense(units[-1], activation=None)
+                keras.layers.Dense(units[-1], activation=output_activation)
             )
     return layers
 
@@ -87,7 +101,8 @@ def create_conv_block(input_shape, number_of_kernels, kernel_size, pool_size, hi
         keras.layers.Conv1D(**conv_layer_parameters),
         keras.layers.BatchNormalization(),
         keras.layers.Activation(hidden_activation),
-        keras.layers.MaxPooling1D(pool_size=pool_size, strides=pool_size)
+        keras.layers.MaxPooling1D(pool_size=pool_size, strides=pool_size),
+        keras.layers.Dropout(dropout_rate)
     ]
 
 ConvBlockDef = namedtuple("ConvBlockDef", [
@@ -141,33 +156,39 @@ def create_model(X, y, groups, path):
 
 
     # >>>>>>>>>>>>>>>>>>>>>> MODEL:
-    conv_layers = create_conv_blocks(
-        input_shape=None,
-        conv_blocks=[
-            ConvBlockDef(
-                number_of_kernels=32,
-                kernel_size=51,
-                pool_size=10
-            ), # => 60 samples
-            ConvBlockDef(
-                number_of_kernels=64,
-                kernel_size=6,
-                pool_size=5
-            ) # => 11 samples
-        ],
-        hidden_activation='relu'
-    )
+    # conv_layers = create_conv_blocks(
+    #     input_shape=None, # shape determined by prev layer
+    #     conv_blocks=[
+    #         # model for 1cm input
+    #         ConvBlockDef(
+    #             number_of_kernels=16,
+    #             kernel_size=51,
+    #             pool_size=5
+    #         ),
+    #         ConvBlockDef(
+    #             number_of_kernels=32,
+    #             kernel_size=11,
+    #             pool_size=5
+    #         ),
+    #         ConvBlockDef(
+    #             number_of_kernels=64,
+    #             kernel_size=3,
+    #             pool_size=2
+    #         ),
+    #     ],
+    #     hidden_activation='relu'
+    # )
     fcn_layers = create_fcn_layers(
-        input_shape=None, # determined by prev layer
-        units=[1],
+        input_shape=input_shape, # determined by prev layer
+        units=[64, 32, 16, 8, 4, 1],
         hidden_activation='relu',
         output_activation='relu'
     )
     model = keras.models.Sequential(
         # reshape data to format acceptable by Conv1D (i.e. add feature channel)
-        [keras.layers.core.Reshape(input_shape + (1,), input_shape=input_shape)] +
-        conv_layers +
-        [keras.layers.core.Flatten()] +
+        # [keras.layers.core.Reshape(input_shape + (1,), input_shape=input_shape)] +
+        # conv_layers +
+        # [keras.layers.core.Flatten()] +
         fcn_layers
     )
     model.compile(
@@ -179,9 +200,17 @@ def create_model(X, y, groups, path):
     model_wrapper = utils.keras.HDF5ModelWrapper(h5_file_path=path, model=model)
     history = model_wrapper.fit(
         X_train, y_train,
-        batch_size=64, epochs=EPOCHS,
+        batch_size=BATCH_SIZE, epochs=EPOCHS,
         validation_data=(X_val, y_val),
-        shuffle=True
+        shuffle=True,
+        callbacks=[
+            keras.callbacks.EarlyStopping(
+                 monitor="val_loss",
+                 patience=50,
+                 mode="min",
+                 restore_best_weights=True
+             ),
+        ]
     )
     return PointEvalResults(
         best_estimator=model_wrapper,
@@ -218,11 +247,13 @@ if __name__ == "__main__":
     print("Starting train/eval procedure...")
 
     scores = utils.sklearn.Multiscore(test_metrics, h5_file_path=args.path)
-    results = utils.sklearn.cross_val_score_by_group(
+    # TODO zapis ocen do CSV
+    # TODO testy na oddzielnie zdefiniowanym zbiorze
+    results = utils.validation.cross_val_score_by_group(
         build_estimator_fn=functools.partial(create_model, path=args.path),
         X=x_idxs, y=y_idxs, groups=ids,
         cv=outer_cv,
-        scores=scores
+        metrics=scores
     )
     print("Train/eval finished.")
     print("Saving results to 'result' dir...")
